@@ -9,11 +9,11 @@ from setuptools import setup
 setup(
     name='Flask-MoSession',
     version='0.2',
-    url='',
+    url='https://github.com/bayazee/flask-mosession',
     license='BSD',
     author='Mehdi Bayazee, Mostafa Rokooie',
     author_email='bayazee@gmail.com, mostafa.rokooie@gmail.com',
-    description='mongodb based server side session management system for Flask',
+    description='Mongodb based server side session management system for Flask',
     long_description=__doc__,
     py_modules=['flask_mosession'],
     zip_safe=False,
