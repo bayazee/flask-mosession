@@ -101,9 +101,9 @@ class MoSession(CallbackDict, SessionMixin):
 
 class MoSessionInterface(SessionInterface):
     """
-    MoSession interface class that replaced with flask session interface
+    MoSession interface class, flask session interface is replaced with this.
 
-    this class help developer for overload or change operation functionality of flask central session manager.
+    MoSession Interface helps developer to overload or change operation functionality of flask central session manager.
     """
 
     session_class = MoSession
@@ -111,35 +111,28 @@ class MoSessionInterface(SessionInterface):
     @property
     def collection(self):
         """
-        this function return collection of current app session manager
+        Returns current app's session manager's mongodb collection.
         """
-
         return current_app.extensions['mosession'].collection
 
     def get_from_cache(self, sid):
         """
-        this function give a Session Id and search in session manager cache, if find it returns data otherwise raise error.
+        Returns session data for a given session id. Returns None if session id is not exist.
 
-        Note: Raise Error not implemented yet
-
-        :param sid: (string) Session Id for getting from cache
+        :param sid: (string) Session id
+        :return: (dict) Session data
         """
-
-        # TODO: inja dar sorat nabood shayad behtar bashe az try baraye modiriat estefade beshe ?
-        data = current_app.extensions['mosession'].cache.get(sid)
-
-        return data
+        # TODO: Using try/except and raising exception if sid is not exist could be better.
+        return current_app.extensions['mosession'].cache.get(sid)
 
     def set_to_cache(self, sid, data):
         """
-        this function give session id and user data then stored in current application cache.
+        Given a session id and session data, stores them in current application's cache.
 
-        :param sid: (string) Session ID for using as key in appilication cache
-        :param data: user data for storing in appilication cache
+        :param sid: (string) Session id
+        :param data: (dict) Session data
         """
-
-        # TODO: dar in marhale dar sorat boroze har gone moshkeli dar
-        # zakhire sazi data daron cache hich controli sorat nemigirad
+        # TODO: Exception handling should be added here
         current_app.extensions['mosession'].cache.set(sid, data)
 
     def load_session(self, sid):
@@ -159,23 +152,14 @@ class MoSessionInterface(SessionInterface):
 
     def open_session(self, app, request):
         """
-        this function gives current application and request then create new Session (or get old session) for request.
+        Gives current app's instance and request, load's or creates session instance of request cycle.
 
-        operation of function :
-        step 1: search in request.cookies for SESSION_COOKIE_NAME if find it then decoding esid (encoded session id)
-        and search in current application cache for sid (session id) if find it return cached data.
-        step 2:if can't find esid in application cache try to find it from application collection's then return it
-        step 3:if can't find esid in collection create new Mossesion object and return it.
-
-        :param app: Current application object
-                    this parameter using for get SESSION_COOKIE_NAME
-        :param request: Current request object
+        :param app: Current app's instance (required to load SESSION_COOKIE_NAME field from config)
+        :param request: Current request
+        :return: (Session)
         """
-
         s = self.load_session(str(request.cookies.get(app.config['SESSION_COOKIE_NAME'], '')))
-        if not s:
-            s = self.session_class()
-        return s
+        return s or self.session_class()
 
     def raw_save_session(self, session):
         dict_session = dict(session)
@@ -184,7 +168,7 @@ class MoSessionInterface(SessionInterface):
 
     def save_session(self, app, session, response):
         """
-        if MoSession object have change this function save all change in cookei or appilication cache.
+        If MoSession object is changed from it's last saved state, this function saves all change in cookie and application's cache.
 
         operation of function :
         step 1:if modified flag of session is true then function go to step 2 else function do nothing
@@ -195,14 +179,11 @@ class MoSessionInterface(SessionInterface):
         step 4:set current session (new created) to current cache
         step 5:set modified flag os session to false
 
-        :param app: Current Appilication Object
-                    this parameter using for get SESSION_COOKIE_NAME
-        :param session: MoSession Object
-                        all data processing work with this parameter
-        :param response: Responce Object
+        :param app: Current app's instance (required to load SESSION_COOKIE_NAME field from config)
+        :param session: MoSession's instance
+        :param response: Responce object
         """
         if session.modified:
-
             # TODO: remember me ham az in variable estefade khahad kard
             session.permanent = self.get_expire_at_browser_close(app)
 
@@ -223,9 +204,9 @@ class MoSessionInterface(SessionInterface):
 
     def get_expire_at_browser_close(self, app):
         """
-        this function get SESSION_EXPIRE_AT_BROWSER_CLOSE from current app and return it.
+        Returns SESSION_EXPIRE_AT_BROWSER_CLOSE value from app's config.
 
-        :param app: Current Appilication Object
+        :param app: Current app's instance
         """
         return not app.config['SESSION_EXPIRE_AT_BROWSER_CLOSE']
 
