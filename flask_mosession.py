@@ -17,7 +17,7 @@ from flask.sessions import SessionInterface, SessionMixin
 from werkzeug.datastructures import CallbackDict
 
 
-__revision__ = '$Revision$'
+__revision__ = '$Revision: e1a7ef4049fb $'
 
 
 class MoSession(CallbackDict, SessionMixin):
@@ -127,8 +127,6 @@ class MoSessionInterface(SessionInterface):
 
         # TODO: inja dar sorat nabood shayad behtar bashe az try baraye modiriat estefade beshe ?
         data = current_app.extensions['mosession'].cache.get(sid)
-#        if data:
-#            current_app.logger.mosession.debug('[GET CACHE]: ', data)
 
         return data
 
@@ -140,7 +138,6 @@ class MoSessionInterface(SessionInterface):
         :param data: user data for storing in appilication cache
         """
 
-#        current_app.logger.mosession.debug('[SET CACHE]: ', data)
         # TODO: dar in marhale dar sorat boroze har gone moshkeli dar
         # zakhire sazi data daron cache hich controli sorat nemigirad
         current_app.extensions['mosession'].cache.set(sid, data)
@@ -151,7 +148,6 @@ class MoSessionInterface(SessionInterface):
             stored_session = self.get_from_cache(sid)
             if not stored_session:
                 stored_session = self.collection.find_one({'_id': Binary(sid)})
-#                current_app.logger.mosession.debug('[GET DB]', stored_session)
 
                 if stored_session:
                     self.set_to_cache(sid, stored_session)
@@ -184,7 +180,6 @@ class MoSessionInterface(SessionInterface):
     def raw_save_session(self, session):
         dict_session = dict(session)
         self.collection.save(dict_session)
-#        current_app.logger.mosession.debug('[SET DB]', dict_session)
         self.set_to_cache(session.sid, dict_session)
 
     def save_session(self, app, session, response):
@@ -263,7 +258,6 @@ class SessionStorage(dict):
                     self.connect()
 
                 self.collections[attr] = self.database[attr]
-                #current_app.logger.mosession.debug('Using MongoDB collection.', {'collection': attr})
 
             return self.collections[attr]
 
@@ -282,11 +276,9 @@ class SessionStorage(dict):
                     self.connection = Connection(self.app.config['MONGODB_HOST'], self.app.config['MONGODB_PORT'])
                 self.database = self.connection[self.app.config['MONGODB_DATABASE']]
 
-                #current_app.logger.mosession.debug('Connected to MongoDB.', {'database': self.app.config['MONGODB_DATABASE']})
 
                 break
             except AutoReconnect:
-                #current_app.logger.mosession.warning('Can not connect to MongoDB.', {'host': self.app.config['MONGODB_HOST']})
                 from time import sleep
                 sleep(0.1)
 
@@ -309,9 +301,6 @@ class MoSessionExtension(object):
         app.config.setdefault('MONGODB_SESSIONS_COLLECTION_NAME', 'sessions')
         app.config.setdefault('SESSION_EXPIRE_AT_BROWSER_CLOSE', True)
         app.config.setdefault('MOSESSION_CACHE_PREFIX', 'mos')
-
-        app.logger.create_logger('mosession')
-        app.logger.mosession.info('MoSession Extension initialized.')
 
         app.session_interface = MoSessionInterface()
         app.extensions['mosession'] = self
