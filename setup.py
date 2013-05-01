@@ -4,8 +4,8 @@ Flask-MoSession
 Flask-Session provides mongodb based server side session management system for Flask.
 
 """
-from setuptools import setup
-
+from setuptools import setup, find_packages
+print find_packages()
 setup(
     name='Flask-MoSession',
     version='0.2',
@@ -16,6 +16,7 @@ setup(
     description='Mongodb based server side session management system for Flask',
     long_description=__doc__,
     py_modules=['flask_mosession'],
+    packages=find_packages(),
     zip_safe=False,
     platforms='any',
     install_requires=[

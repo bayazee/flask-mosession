@@ -15,6 +15,7 @@ from uuid import uuid4
 from flask import current_app
 from flask.sessions import SessionInterface, SessionMixin
 from werkzeug.datastructures import CallbackDict
+from cache_backends import NoCacheBackend
 
 
 __revision__ = '$Revision: e1a7ef4049fb $'
@@ -49,7 +50,7 @@ class MoSession(CallbackDict, SessionMixin):
 
     def remove_stored_session(self):
         current_app.extensions['mosession'].collection.remove({'_id': self['_id']})
-        current_app.extensions['mosession'].cache.delete(str(self['_id']))
+        current_app.extensions['mosession'].cache.remove(str(self['_id']))
 
     def destroy(self):
         """Destroys a session completely, by deleting all keys and removing it
@@ -115,35 +116,15 @@ class MoSessionInterface(SessionInterface):
         """
         return current_app.extensions['mosession'].collection
 
-    def get_from_cache(self, sid):
-        """
-        Returns session data for a given session id. Returns None if session id is not exist.
-
-        :param sid: (string) Session id
-        :return: (dict) Session data
-        """
-        # TODO: Using try/except and raising exception if sid is not exist could be better.
-        return current_app.extensions['mosession'].cache.get(sid)
-
-    def set_to_cache(self, sid, data):
-        """
-        Given a session id and session data, stores them in current application's cache.
-
-        :param sid: (string) Session id
-        :param data: (dict) Session data
-        """
-        # TODO: Exception handling should be added here
-        current_app.extensions['mosession'].cache.set(sid, data)
-
     def load_session(self, sid):
         stored_session = None
         if sid:
-            stored_session = self.get_from_cache(sid)
+            stored_session = current_app.extensions['mosession'].cache.get(sid)
             if not stored_session:
                 stored_session = self.collection.find_one({'_id': Binary(sid)})
 
                 if stored_session:
-                    self.set_to_cache(sid, stored_session)
+                    current_app.extensions['mosession'].cache.set(sid, stored_session)
 
         if stored_session:
             return self.session_class(stored_session)
@@ -164,7 +145,7 @@ class MoSessionInterface(SessionInterface):
     def raw_save_session(self, session):
         dict_session = dict(session)
         self.collection.save(dict_session)
-        self.set_to_cache(session.sid, dict_session)
+        current_app.extensions['mosession'].cache.set(session.sid, dict_session)
 
     def save_session(self, app, session, response):
         """
@@ -281,7 +262,7 @@ class MoSessionExtension(object):
     def init_app(self, app):
         app.config.setdefault('MONGODB_SESSIONS_COLLECTION_NAME', 'sessions')
         app.config.setdefault('SESSION_EXPIRE_AT_BROWSER_CLOSE', True)
-        app.config.setdefault('MOSESSION_CACHE_PREFIX', 'mos')
+        app.config.setdefault('MOSESSION_CACHE_BACKEND', 'NoCacheBackend')
 
         app.session_interface = MoSessionInterface()
         app.extensions['mosession'] = self
@@ -289,10 +270,8 @@ class MoSessionExtension(object):
         if self.session_class:
             app.session_interface.session_class = self.session_class
 
-        self.cache = app.extensions['cache'].create_cache(app.config['MOSESSION_CACHE_PREFIX'])
-
+        self.cache = getattr(cache_backends, app.config['MOSESSION_CACHE_BACKEND'])(app)
         self.storage = SessionStorage(app)
-
         self.app = app
 
     @property
