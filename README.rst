@@ -4,10 +4,12 @@ flask-mosession
 Alternative for Flask session module that uses MongoDB as main storage
 
 
-Example
-=======
+Easy to setup and use
+=====================
 
-Here is an example of flask-mosession usage:
+Here is an example showing how to setup and use flask-mosession:
+
+.. code-block:: python
 
     from datetime import datetime
     from flask import Flask, session
