@@ -195,7 +195,7 @@ class MoSessionInterface(SessionInterface):
 
 class SessionStorage(object):
     """
-    this class gives current application object and create functionality for using MongoDB with pymongo driver
+    The class role is to serve the storage, So it's a wrapper on pymongo's database class to add auto reconnect.
 
     :param app: Current Application Object
     """
@@ -204,7 +204,6 @@ class SessionStorage(object):
         self.port = port
         self.database_name = database_name
 
-        self.connection = None
         self.database = None
         self.collections = {}
 
@@ -229,7 +228,7 @@ class SessionStorage(object):
         It will try 5 times to connect to database - with 100ms delay between tries -
         """
 
-        if self.connection:
+        if self.database:
             return
 
         from pymongo.connection import Connection
@@ -237,8 +236,7 @@ class SessionStorage(object):
 
         for _connection_attempts in range(5):
             try:
-                self.connection = Connection(self.host, self.port)
-                self.database = self.connection[self.database_name]
+                self.database = Connection(self.host, self.port)[self.database_name]
             except AutoReconnect:
                 from time import sleep
                 sleep(0.1)
@@ -268,15 +266,11 @@ class MoSessionExtension(object):
 
         :param app: Flask's app instance
         """
+        app.extensions['mosession'] = self
+
         app.config.setdefault('MONGODB_SESSIONS_COLLECTION_NAME', 'sessions')
         app.config.setdefault('SESSION_EXPIRE_AT_BROWSER_CLOSE', True)
         app.config.setdefault('MOSESSION_CACHE_BACKEND', 'NoCacheBackend')
-
-        app.session_interface = MoSessionInterface()
-        app.extensions['mosession'] = self
-
-        if self.session_class:
-            app.session_interface.session_class = self.session_class
 
         self.cache = getattr(cache_backends, app.config['MOSESSION_CACHE_BACKEND'])(app)
         self.storage = SessionStorage(
@@ -284,12 +278,18 @@ class MoSessionExtension(object):
             app.config['MONGODB_PORT'],
             app.config['MONGODB_DATABASE']
         )
-        self.app = app
+
+        app.session_interface = MoSessionInterface()
+
+        if self.session_class:
+            app.session_interface.session_class = self.session_class
+
+        self.mongo_collection_name = app.config['MONGODB_SESSIONS_COLLECTION_NAME']
 
     @property
     def collection(self):
         if not self._collection:
-            self._collection = self.storage[self.app.config['MONGODB_SESSIONS_COLLECTION_NAME']]
+            self._collection = self.storage[self.mongo_collection_name]
 
         return self._collection
 
