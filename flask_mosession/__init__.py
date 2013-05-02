@@ -14,6 +14,7 @@ from uuid import uuid4
 
 from flask import current_app
 from flask.sessions import SessionInterface, SessionMixin
+from pymongo.errors import ConnectionFailure
 from werkzeug.datastructures import CallbackDict
 from cache_backends import NoCacheBackend
 
@@ -192,62 +193,64 @@ class MoSessionInterface(SessionInterface):
         return not app.config['SESSION_EXPIRE_AT_BROWSER_CLOSE']
 
 
-class SessionStorage(dict):
+class SessionStorage(object):
     """
     this class gives current application object and create functionality for using MongoDB with pymongo driver
 
     :param app: Current Application Object
     """
-    def __init__(self, app):
-        dict.__init__(self)
-        self.app = app
+    def __init__(self, host, port, database_name):
+        self.host = host
+        self.port = port
+        self.database_name = database_name
+
         self.connection = None
         self.database = None
         self.collections = {}
 
-    def __getitem__(self, attr):
+    def __getitem__(self, item):
         """
-        this function work same as python dict.__getitem__() function but if can't find attr in dict try to find attr in
-        MongoDB collection and return it.
+        Serves database collections as the class items with brackets.
 
-        :param attr: attr is a key for getting value from dict or MongoDB collection's
+        :param item: Requested collection's name
         """
-        try:
-            return dict.__getitem__(self, attr)
-        except KeyError:
-            if not attr in self.collections:
-                if not self.database:
-                    self.connect()
+        if not item in self.collections:
+            if not self.database:
+                self.connect()
 
-                self.collections[attr] = self.database[attr]
+            self.collections[item] = self.database[item]
 
-            return self.collections[attr]
+        return self.collections[item]
 
     def connect(self):
         """
-        this function try for connecting to MongoDB with Current appilication config. if connect successfully function is
-        beak. otherwise try it every 0.1 secend.
+        Try to connect to mongodb and set self.database to sessions's database reference.
+
+        It will try 5 times to connect to database - with 100ms delay between tries -
         """
+
+        if self.connection:
+            return
 
         from pymongo.connection import Connection
         from pymongo.errors import AutoReconnect
 
-        for _connection_attemps in range(5):
+        for _connection_attempts in range(5):
             try:
-                if self.connection is None:
-                    self.connection = Connection(self.app.config['MONGODB_HOST'], self.app.config['MONGODB_PORT'])
-                self.database = self.connection[self.app.config['MONGODB_DATABASE']]
-
-
-                break
+                self.connection = Connection(self.host, self.port)
+                self.database = self.connection[self.database_name]
             except AutoReconnect:
                 from time import sleep
                 sleep(0.1)
+            else:
+                break
+        else:
+            raise ConnectionFailure
 
 
 class MoSessionExtension(object):
     """
-    Activates Flask-MoSession for an application.
+    MoSession extension object.
     """
 
     def __init__(self, app=None):
@@ -260,6 +263,11 @@ class MoSessionExtension(object):
             self.init_app(app)
 
     def init_app(self, app):
+        """
+        Register flask-mosession with Flask's app instance.
+
+        :param app: Flask's app instance
+        """
         app.config.setdefault('MONGODB_SESSIONS_COLLECTION_NAME', 'sessions')
         app.config.setdefault('SESSION_EXPIRE_AT_BROWSER_CLOSE', True)
         app.config.setdefault('MOSESSION_CACHE_BACKEND', 'NoCacheBackend')
@@ -271,7 +279,11 @@ class MoSessionExtension(object):
             app.session_interface.session_class = self.session_class
 
         self.cache = getattr(cache_backends, app.config['MOSESSION_CACHE_BACKEND'])(app)
-        self.storage = SessionStorage(app)
+        self.storage = SessionStorage(
+            app.config['MONGODB_HOST'],
+            app.config['MONGODB_PORT'],
+            app.config['MONGODB_DATABASE']
+        )
         self.app = app
 
     @property
