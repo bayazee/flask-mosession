@@ -23,13 +23,15 @@ __revision__ = '$Revision: e1a7ef4049fb $'
 
 
 class MoSession(CallbackDict, SessionMixin):
-    """Session Replacement class.
+    """
+    Session replacement class.
 
-    Instances of this class will replace the session (and thus be available
-    through things like :attr:`flask.session`.
+    The session object will be an instance of this class or it's children.
+    By importing flask.session, you will get this class' object.
 
-    The session class will save data to the store only when necessary, empty
-    sessions will not be stored at all."""
+    The MoSession class will save data only when it's necessary,
+    empty sessions will not saved.
+    """
 
     def __init__(self, initial=None):
         def _on_update(d):
@@ -38,7 +40,6 @@ class MoSession(CallbackDict, SessionMixin):
         CallbackDict.__init__(self, initial, _on_update)
 
         if initial:
-            # Data found in cache or db and usually its not modified
             self.modified = False
         else:
             self.generate_sid()
@@ -46,11 +47,16 @@ class MoSession(CallbackDict, SessionMixin):
             self.modified = True
 
     def generate_sid(self):
+        """
+        Generate session id using UUID4 and store it in the object's _id attribute.
+
+        :return: (Binary) Session id
+        """
         self['_id'] = Binary(str(uuid4()))
         return self['_id']
 
     def remove_stored_session(self):
-        current_app.extensions['mosession'].collection.remove({'_id': self['_id']})
+        current_app.extensions['mosession'].storage.collection.remove({'_id': self['_id']})
         current_app.extensions['mosession'].cache.remove(str(self['_id']))
 
     def destroy(self):
@@ -82,19 +88,11 @@ class MoSession(CallbackDict, SessionMixin):
     @property
     def sid(self):
         """
-        Return Current session ID.
+        Return session id.
+        Session id is stored in database as it's _id field.
 
-        this function help developer to store session id in browser cookie, and use it for next request's
-
-        sid (or Session ID ) is same as mongoid, this peroperty has object of mongodb models and stored as
-        :attr:`stored_session`.
-
-        (:class:`MoSession`) class only stored object of session in self whit name :attr:`stored_session`.
-        developer only can access to this peroperty with sid.
-
-        sid stored as _id field in class.
+        :return: Session id
         """
-
         return str(self['_id'])
 
     def __setattr__(self, *args, **kwargs):
@@ -111,86 +109,94 @@ class MoSessionInterface(SessionInterface):
     session_class = MoSession
 
     @property
-    def collection(self):
+    def _mosession(self):
         """
-        Returns current app's session manager's mongodb collection.
+        Returns current app's MoSession extension instance.
         """
-        return current_app.extensions['mosession'].collection
+        return current_app.extensions['mosession']
 
     def load_session(self, sid):
-        stored_session = None
-        if sid:
-            stored_session = current_app.extensions['mosession'].cache.get(sid)
-            if not stored_session:
-                stored_session = self.collection.find_one({'_id': Binary(sid)})
+        """
+        Load session from cache or database, If found in database but not in cache, saves it in cache too.
 
-                if stored_session:
-                    current_app.extensions['mosession'].cache.set(sid, stored_session)
+        :param sid: Session ID
+        :return: An instance of type session_class with session data or None if session not found
+        """
+        if not sid:
+            return None
 
-        if stored_session:
-            return self.session_class(stored_session)
+        stored_session = self._mosession.cache.get(sid)
+        if not stored_session:
+            stored_session = self._mosession.storage.collection.find_one({'_id': Binary(sid)})
 
-        return None
+            if stored_session:
+                self._mosession.cache.set(sid, stored_session)
+
+        return self.session_class(stored_session) if stored_session else None
 
     def open_session(self, app, request):
         """
-        Gives current app's instance and request, load's or creates session instance of request cycle.
+        Overrides open_session interface.
+        Tries to load session, in case of failure creates a new instance of session_class type.
 
         :param app: Current app's instance (required to load SESSION_COOKIE_NAME field from config)
         :param request: Current request
-        :return: (Session)
+        :return: Session object
         """
-        s = self.load_session(str(request.cookies.get(app.config['SESSION_COOKIE_NAME'], '')))
-        return s or self.session_class()
+        return self.load_session(str(request.cookies.get(app.config['SESSION_COOKIE_NAME'], ''))) or self.session_class()
 
     def raw_save_session(self, session):
+        """
+        Save session in database and also in cache.
+
+        :param session: Session object
+        :return:
+        """
         dict_session = dict(session)
-        self.collection.save(dict_session)
-        current_app.extensions['mosession'].cache.set(session.sid, dict_session)
+        self._mosession.storage.collection.save(dict_session)
+        self._mosession.cache.set(session.sid, dict_session)
 
     def save_session(self, app, session, response):
         """
-        If MoSession object is changed from it's last saved state, this function saves all change in cookie and application's cache.
+        Overrides save_session interface.
+        Save session data if it's modified, it cares about session expiration and other features.
 
         operation of function :
         step 1:if modified flag of session is true then function go to step 2 else function do nothing
         step 2:function calculate expire time and session permanent then if new flags of session and expire are true then change
-        session expier property to expire time
+        session expire property to expire time
         step 3:now if new flag of session is true set session sid (session id) and change flag to false.set sid and current cookie
         data in cookies
         step 4:set current session (new created) to current cache
         step 5:set modified flag os session to false
 
         :param app: Current app's instance (required to load SESSION_COOKIE_NAME field from config)
-        :param session: MoSession's instance
-        :param response: Responce object
+        :param session: Session object
+        :param response: Response object
         """
-        if session.modified:
-            # TODO: remember me ham az in variable estefade khahad kard
-            session.permanent = self.get_expire_at_browser_close(app)
+        if not session.modified:
+            return
 
-            expire = self.get_expiration_time(app, session)
+        session.permanent = not app.config['SESSION_EXPIRE_AT_BROWSER_CLOSE']
 
-            if session.new and expire:
-                session['expire'] = expire
+        expiration = self.get_expiration_time(app, session)
 
-            self.raw_save_session(session)
+        if session.new and expiration:
+            # TODO: Is this line really necessary?
+            session['expire'] = expiration
 
-            if session.new:
-                session.new = False
-                response.set_cookie(key=app.config['SESSION_COOKIE_NAME'], value=session.sid,
-                                    domain=self.get_cookie_domain(app),
-                                    expires=expire, httponly=self.get_cookie_httponly(app))
+        self.raw_save_session(session)
 
-            session.modified = False
+        if session.new:
+            session.new = False
+            response.set_cookie(
+                key=app.config['SESSION_COOKIE_NAME'],
+                value=session.sid,
+                domain=self.get_cookie_domain(app),
+                expires=expiration, httponly=self.get_cookie_httponly(app)
+            )
 
-    def get_expire_at_browser_close(self, app):
-        """
-        Returns SESSION_EXPIRE_AT_BROWSER_CLOSE value from app's config.
-
-        :param app: Current app's instance
-        """
-        return not app.config['SESSION_EXPIRE_AT_BROWSER_CLOSE']
+        session.modified = False
 
 
 class SessionStorage(object):
@@ -199,27 +205,18 @@ class SessionStorage(object):
 
     :param app: Current Application Object
     """
-    def __init__(self, host, port, database_name):
+    def __init__(self, host, port, database_name, collection_name):
         self.host = host
         self.port = port
         self.database_name = database_name
+        self.collection_name = collection_name
+        self._collection = None
 
-        self.database = None
-        self.collections = {}
-
-    def __getitem__(self, item):
-        """
-        Serves database collections as the class items with brackets.
-
-        :param item: Requested collection's name
-        """
-        if not item in self.collections:
-            if not self.database:
-                self.connect()
-
-            self.collections[item] = self.database[item]
-
-        return self.collections[item]
+    @property
+    def collection(self):
+        if not self._collection:
+            self.connect()
+        return self._collection
 
     def connect(self):
         """
@@ -228,7 +225,7 @@ class SessionStorage(object):
         It will try 5 times to connect to database - with 100ms delay between tries -
         """
 
-        if self.database:
+        if self._collection:
             return
 
         from pymongo.connection import Connection
@@ -236,7 +233,7 @@ class SessionStorage(object):
 
         for _connection_attempts in range(5):
             try:
-                self.database = Connection(self.host, self.port)[self.database_name]
+                self._collection = Connection(self.host, self.port)[self.database_name][self.collection_name]
             except AutoReconnect:
                 from time import sleep
                 sleep(0.1)
@@ -276,22 +273,14 @@ class MoSessionExtension(object):
         self.storage = SessionStorage(
             app.config['MONGODB_HOST'],
             app.config['MONGODB_PORT'],
-            app.config['MONGODB_DATABASE']
+            app.config['MONGODB_DATABASE'],
+            app.config['MONGODB_SESSIONS_COLLECTION_NAME'],
         )
 
         app.session_interface = MoSessionInterface()
 
         if self.session_class:
             app.session_interface.session_class = self.session_class
-
-        self.mongo_collection_name = app.config['MONGODB_SESSIONS_COLLECTION_NAME']
-
-    @property
-    def collection(self):
-        if not self._collection:
-            self._collection = self.storage[self.mongo_collection_name]
-
-        return self._collection
 
     def cleanup_sessions(self):
         # TODO: ba dastorate mongodb document haye expire shode bayad hazf beshe
